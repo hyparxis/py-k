@@ -11,14 +11,34 @@ from itertools import tee
 
 import autograd.numpy as np
 from autograd import jacobian
+from autograd import grad
 
 import time
 
-# PARAMETERS
-l = [1, 1, 1]
-c = [(1,0,0),(0,1,0),(0,0,1)] # r, g, b
-q = np.array([np.pi/2, np.pi/2, np.pi/2], dtype=float)
+import random
 
+# PARAMETERS
+n = int(input("Number of links: "))
+l = [1] * n
+c = [tuple(random.uniform(0, 1) for c in range(3)) for _ in range(n)]
+q = np.random.uniform(0, 1, n)
+
+#q = np.array([0] * n, dtype=float)
+
+EPS = 1e-3
+
+def draw_point(x, y, rad=1):
+    glEnable(GL_POINT_SMOOTH)
+    glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
+    glPointSize(rad)
+
+    glBegin(GL_POINTS)
+
+    glColor3f(1, 0, 0)
+    glVertex3f(x, y, 0)
+
+    glEnd()
+    
 
 def draw_line(p1, p2, color=None):
     glBegin(GL_LINES)
@@ -36,9 +56,10 @@ def pol2car(r, theta):
     return r * np.array([np.cos(theta), np.sin(theta)])
 
 def mouse_unproject(x, y):
-    px, py, pz = gluUnProject(x, y, 0)
+    z = glReadPixels(x, y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)
+    px, py, pz = gluUnProject(x, y, z)
 
-    return (10 * px, 10 * py)
+    return (px, py)
 
 def main(fun):
     pygame.init()
@@ -47,14 +68,14 @@ def main(fun):
 
     znear, zfar, dist = 1, 10, 10
 
-    #mult = (2 * zfar * znear) / (znear - zfar) * dist
-
     gluPerspective(45, (display[0]/display[1]), znear, zfar)
     glTranslatef(0.0, 0.0, -dist)
     glLineWidth(5)
 
 
     while True:
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -64,17 +85,15 @@ def main(fun):
                 x, y = event.pos
 
                 x, y = mouse_unproject(x, display[1] - y)
-                
-                x = float(input("x: "))
-                y = float(input("y: "))
+                draw_point(x, y)
+                #print(x, y)
+                # x = float(input("x: "))
+                # y = float(input("y: "))
 
-                print(x, y)
-                print(fk(q))
+                # print(fk(q))
                 fun(np.array([x, y], dtype=float), q)
-                print(fk(q))
+                # print(fk(q))
     
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-
         draw_arm(q, l, c)
 
         pygame.display.flip()
@@ -98,7 +117,7 @@ def draw_arm(q, l, c):
     # convert to cartesian vectors, add root
     model = [[0, 0]] + [pol2car(*row) for row in model]
 
-    # put each line in global cartesian coordinates
+    # put each point in global cartesian coordinates
     model = np.cumsum(model, axis=0)
 
     for (i, line) in enumerate(pairwise(model)):
@@ -115,29 +134,70 @@ def fk(q):
 
     return np.array([x, y])
 
-def program(goal, q):
+def jacobian_ik(goal, q, inverse=True):
     lr = 0.1
 
     fk_jacobian = jacobian(fk)
 
-    while np.any(goal - fk(q) > 0.00001):
+    while np.any(np.abs(goal - fk(q)) > EPS):
         # get end effector Jacobian using automatic differentiation
         J = fk_jacobian(q)
 
-        # pseudoinvert jacobian
-        Jinv = np.linalg.pinv(J)
+        # pseudoinvert jacobian, can also just do transpose
+        if inverse:
+            Jinv = np.linalg.pinv(J)
+        else:
+            Jinv = J.T
 
-        # calculate "cost"
-        cost = goal - fk(q)
+        # calculate distance
+        distance = goal - fk(q)
 
-        q += lr * Jinv @ cost
+        q += lr * Jinv @ distance
 
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
 
         draw_arm(q, l, c)
 
         pygame.display.flip()
-        pygame.time.wait(10)
+        pygame.time.wait(1)
+
+
+def gd_ik(goal, q, nesterov=False):
+    n_itr = 0
+
+    # 2 norm
+    cost = lambda q: 1/2 * (goal - fk(q)).T @ (goal - fk(q))
+    
+    grad_cost = grad(cost)
+
+    # momentum
+    nu = 0.9
+    # learning rate
+    alpha = 0.01
+
+    v = 0
+    while np.any(np.abs(cost(q)) > EPS):
+        if nesterov:
+            v = nu * v + alpha * grad_cost(q - nu * v)
+            q -= v
+        else:
+            q -= alpha * grad_cost(q)
+
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+
+        draw_arm(q, l, c)
+
+        pygame.display.flip()
+        pygame.time.wait(1)
+
+        n_itr += 1
+        #print("loss: ", cost(q))
+
+    print(f"number of iterations: {n_itr}")
+
+def program(goal, q):
+    #jacobian_ik(goal, q, inverse=False)
+    gd_ik(goal, q, nesterov=True)
 
 
 if __name__ == "__main__":
