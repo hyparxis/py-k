@@ -11,7 +11,7 @@ import time
 import random
 from functools import partial
 
-from vis import draw_arm, draw_loop
+from vis import draw_arm, draw_loop, draw_init
 
 EPS = 1e-3
 
@@ -46,12 +46,7 @@ def jacobian_ik(goal, q, inverse=True):
 
         q += lr * Jinv @ distance
 
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-
-        draw_arm(q, l, c)
-
-        pygame.display.flip()
-        pygame.time.wait(1)
+        draw_arm(q, l, c, True)
 
 
 def gd_ik(goal, q, nesterov=False):
@@ -76,7 +71,7 @@ def gd_ik(goal, q, nesterov=False):
         else:
             q -= alpha * grad_cost(q)
 
-        draw_arm(q, l, c)
+        draw_arm(q, l, c, True)
 
         n_itr += 1
         #print("loss: ", cost(q))
@@ -86,11 +81,6 @@ def gd_ik(goal, q, nesterov=False):
 def program(goal, q):
     #jacobian_ik(goal, q, inverse=False)
     gd_ik(goal, q, nesterov=True)
-
-
-def loop_cb(*args, **kwargs):
-    draw_arm(q, l, c)
-
 
 if __name__ == "__main__":
     global q, l, c
@@ -106,8 +96,10 @@ if __name__ == "__main__":
     # linkage generalized coordinates 
     q = np.random.uniform(0, 1, n)
 
+    draw_init()
+
     # callbacks take globals; maybe not neccessary 
     draw_loop(
         loop_cb=lambda *args, **kwargs: draw_arm(q, l, c),
-        click_cb=lambda *args, **kwargs: gd_ik(args[0], q, True)
+        click_cb=lambda *args, **kwargs: program(args[0], q)
     )

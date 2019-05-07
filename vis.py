@@ -8,6 +8,9 @@ import numpy as np
 
 from util import pairwise
 
+_init = False
+display = (800, 600)
+
 def draw_point(x, y, rad=1):
     glEnable(GL_POINT_SMOOTH)
     glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
@@ -41,8 +44,9 @@ def mouse_unproject(x, y):
 
     return (px, py)
 
-def draw_arm(q, l, c):
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+def draw_arm(q, l, c, clear=True, swap=True):
+    if clear:
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
 
     # zip into matrix of polar vectors
     model = np.array([list(a) for a in zip(l, q)])
@@ -60,12 +64,12 @@ def draw_arm(q, l, c):
     for (i, line) in enumerate(pairwise(model)):
         draw_line(*line, color=c[i])
     
-    pygame.display.flip()
-    pygame.time.wait(1)
+    if swap:
+        pygame.display.flip()
+        pygame.time.wait(1)
 
-def draw_loop(loop_cb=None, click_cb=None):
+def draw_init():
     pygame.init()
-    display = (800, 600)
     pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
 
     znear, zfar, dist = 1, 10, 10
@@ -74,7 +78,10 @@ def draw_loop(loop_cb=None, click_cb=None):
     glTranslatef(0.0, 0.0, -dist)
     glLineWidth(5)
 
+    global _init
+    _init = True
 
+def draw_loop(loop_cb=None, click_cb=None):
     while True:
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
 
